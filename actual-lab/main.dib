@@ -1,0 +1,332 @@
+#!meta
+
+{"kernelInfo":{"defaultKernelName":"fsharp","items":[{"name":"csharp","languageName":"C#","aliases":["c#","cs"]},{"name":"fsharp","languageName":"fsharp"},{"name":"html","languageName":"HTML"},{"name":"http","languageName":"HTTP"},{"name":"javascript","languageName":"JavaScript","aliases":["js"]},{"name":"mermaid","languageName":"Mermaid"},{"name":"pwsh","languageName":"PowerShell","aliases":["powershell"]},{"name":"value"}]}}
+
+#!fsharp
+
+#r "nuget: Plotly.NET.Interactive"
+
+open System
+open Plotly.NET
+
+#!fsharp
+
+// --------------------------
+// 1. Исходное сообщение
+// --------------------------
+
+// Таблица соответствий для символов (Windows-1251, урезанная под задание)
+let charToHex = dict [
+    'А', "C0"; 'Б', "C1"; 'В', "C2"; 'Г', "C3"; 'Д', "C4"; 'Е', "C5"; 'Ж', "C6"; 'З', "C7"
+    'И', "C8"; 'Й', "C9"; 'К', "CA"; 'Л', "CB"; 'М', "CC"; 'Н', "CD"; 'О', "CE"; 'П', "CF"
+    'Р', "D0"; 'С', "D1"; 'Т', "D2"; 'У', "D3"; 'Ф', "D4"; 'Х', "D5"; 'Ц', "D6"; 'Ч', "D7"
+    'Ш', "D8"; 'Щ', "D9"; 'Ъ', "DA"; 'Ы', "DB"; 'Ь', "DC"; 'Э', "DD"; 'Ю', "DE"; 'Я', "DF"
+    'а', "E0"; 'б', "E1"; 'в', "E2"; 'г', "E3"; 'д', "E4"; 'е', "E5"; 'ж', "E6"; 'з', "E7"
+    'и', "E8"; 'й', "E9"; 'к', "EA"; 'л', "EB"; 'м', "EC"; 'н', "ED"; 'о', "EE"; 'п', "EF"
+    'р', "F0"; 'с', "F1"; 'т', "F2"; 'у', "F3"; 'ф', "F4"; 'х', "F5"; 'ц', "F6"; 'ч', "F7"
+    'ш', "F8"; 'щ', "F9"; 'ъ', "FA"; 'ы', "FB"; 'ь', "FC"; 'э', "FD"; 'ю', "FE"; 'я', "FF"
+    ' ', "20"; '.', "2E"
+    'М', "CC"; 'Р', "D0" // дублируем для инициалов
+]
+
+// Ваше ФИО
+let fio = "Проказин М.Р."
+
+let fioHex =
+    fio.ToCharArray()
+    |> Array.map (fun c -> 
+        match charToHex.TryGetValue(c) with
+        | true, v -> v
+        | _ -> failwithf $"Не найден код для символа '{c}'"
+    )
+    |> Array.toList
+
+let fioBin =
+    fioHex
+    |> List.map (fun h -> Convert.ToString(Convert.ToInt32(h,16),2).PadLeft(8,'0'))
+    |> String.concat " "
+
+printfn "Исходное сообщение: %s" fio
+printfn "Шестнадцатеричный вид: %s" (String.concat " " fioHex)
+printfn "Двоичный вид: %s" fioBin
+printfn "Длина: %d байт (%d бит)" fioHex.Length (fioHex.Length*8)
+
+// Для дальнейших расчётов берём массив битов (int list)
+let msgBits =
+    fioBin.Replace(" ","").ToCharArray() |> Array.map (fun c -> int c - int '0') |> Array.toList
+
+#!fsharp
+
+// --------------------------
+// 2. Физическое кодирование (NRZ, Manchester, AMI)
+// --------------------------
+
+// --- NRZ ---
+let encodeNRZ bits =
+    bits |> List.map (fun b -> if b=1 then 1 else 0)
+
+let nrzSignal = encodeNRZ msgBits
+
+// --- Manchester ---
+let encodeManchester bits =
+    bits |> List.collect (fun b -> if b=1 then [1;0] else [0;1])
+
+let manchesterSignal = encodeManchester msgBits
+
+// --- AMI ---
+let encodeAMI bits =
+    let rec go bits last =
+        match bits with
+        | [] -> []
+        | 0::tl -> 0 :: go tl last
+        | 1::tl ->
+            let level = if last=1 then -1 else 1
+            level :: go tl level
+    go bits 0
+
+let amiSignal = encodeAMI msgBits
+
+// Для визуализации: первые 32 бита (4 байта)
+let firstN n s = s |> List.take n
+
+let plotSignal name xs ys =
+    let toStepData (xs:int list) (ys:int list) =
+        let pairs = List.zip xs ys
+        let rec build acc = function
+            | (x1, y1) :: (x2, y2) :: rest ->
+                build (acc @ [x1, y1; x2, y1]) ((x2, y2) :: rest)
+            | [last] -> acc @ [last]
+            | [] -> acc
+        build [] pairs |> List.unzip
+
+    // let (x, y) = (xs, ys) in
+    let (x, y) = toStepData xs ys in
+        Chart.Line(x=x, y=y, Name=name)
+        |> Chart.withXAxisStyle("Бит")
+        |> Chart.withYAxisStyle("Уровень")
+        |> Chart.withTitle(name)
+        |> Chart.withSize(800,250)
+
+let nbits = 104
+let xs = [0..nbits-1]
+
+let chNrz = plotSignal "NRZ" xs (firstN nbits nrzSignal)
+let chMan = plotSignal "Manchester" [0..2*nbits-1] (firstN (2*nbits) manchesterSignal)
+let chAmi = plotSignal "AMI" xs (firstN nbits amiSignal)
+
+[ chNrz; chMan; chAmi ]
+|> Chart.Grid(3, 1)
+|> Chart.withSize(1200, 800)
+
+#!fsharp
+
+// --------------------------
+// 2.1. Расчет частотных характеристик (по теории)
+// --------------------------
+
+let c = 1e9 // C = 1 Гбит/с
+
+let freqNRZ = 
+    let f_v = c/2.0
+    let f_n = 0.0
+    let bw = f_v - f_n
+    (f_v, f_n, bw)
+
+let freqManch =
+    let f_v = c
+    let f_n = c/2.0
+    let bw = f_v - f_n
+    (f_v, f_n, bw)
+
+let freqAMI =
+    let f_v = c/2.0
+    let f_n = 0.0 // При длинных 0 — возможна постоянная
+    let bw = f_v - f_n
+    (f_v, f_n, bw)
+
+printfn "NRZ:   Верхняя %.0f МГц, Нижняя %.0f МГц, Ширина %.0f МГц" (freqNRZ|>fun(f,_,w)->f/1e6) (freqNRZ|>fun(_,f,_)->f/1e6) (freqNRZ|>fun(_,_,w)->w/1e6)
+printfn "Manchester: %.0f МГц, %.0f МГц, %.0f МГц" (freqManch|>fun(f,_,w)->f/1e6) (freqManch|>fun(_,f,_)->f/1e6) (freqManch|>fun(_,_,w)->w/1e6)
+printfn "AMI:   %.0f МГц, %.0f МГц, %.0f МГц" (freqAMI|>fun(f,_,w)->f/1e6) (freqAMI|>fun(_,f,_)->f/1e6) (freqAMI|>fun(_,_,w)->w/1e6)
+
+#!fsharp
+
+// --------------------------
+// 3. Логическое кодирование (4B/5B)
+// --------------------------
+
+// Таблица 4B/5B (копировать из условия)
+let table4B5B = dict [
+    "0000","11110"; "0001","01001"; "0010","10100"; "0011","10101";
+    "0100","01010"; "0101","01011"; "0110","01110"; "0111","01111";
+    "1000","10010"; "1001","10011"; "1010","10110"; "1011","10111";
+    "1100","11010"; "1101","11011"; "1110","11100"; "1111","11101"
+]
+
+let binPad n (b:string) = b.PadLeft(n,'0')
+
+let msgBits4 =
+    let msg = fioBin.Replace(" ","")
+    [for i in 0..4..(msg.Length-4) -> msg.Substring(i, min 4 (msg.Length-i))]
+    |> List.map (fun b -> binPad 4 b)
+    
+let msgBits5 =
+    msgBits4 |> List.map (fun b -> 
+        match table4B5B.TryGetValue(b) with
+        | true, v -> v
+        | _ -> failwithf "Нет кода для %s" b
+    )
+
+let encoded4b5b = String.concat "" msgBits5
+
+let encodedBytes =
+    // разбить по 8 бит для получения шестнадцатеричного представления
+    [for i in 0..8..(encoded4b5b.Length-1) -> 
+        encoded4b5b.Substring(i, min 8 (encoded4b5b.Length-i)) ]
+
+let encodedHex =
+    encodedBytes
+    |> List.map (fun b -> Convert.ToInt32(b,2).ToString("X2"))
+    |> String.concat " "
+
+printfn "4B/5B логическое кодирование:"
+printfn "Двоичный код: %s" (encoded4b5b)
+printfn "Шестнадцатеричный: %s" encodedHex
+printfn "Длина: %d бит (%.1f байт)" encoded4b5b.Length (float(encoded4b5b.Length)/8.0)
+printfn "Избыточность: %.1f%%" (100.0*(float(encoded4b5b.Length-(List.length msgBits))/float (List.length msgBits)))
+
+#!fsharp
+
+// --------------------------
+// 3.1. Физическое кодирование для 4B/5B (повторяем NRZ, Manchester, AMI)
+// --------------------------
+
+let bits4b5b = encoded4b5b.ToCharArray() |> Array.map (fun c -> int c - int '0') |> Array.toList
+
+let nrz_4b5b = encodeNRZ bits4b5b
+let manch_4b5b = encodeManchester bits4b5b
+let ami_4b5b = encodeAMI bits4b5b
+
+let nbits_4b5b = 32
+let chNrz4b5b = plotSignal "NRZ (4B/5B)" [0..nbits_4b5b-1] (firstN nbits_4b5b nrz_4b5b)
+let chMan4b5b = plotSignal "Manchester (4B/5B)" [0..2*nbits_4b5b-1] (firstN (2*nbits_4b5b) manch_4b5b)
+let chAmi4b5b = plotSignal "AMI (4B/5B)" [0..nbits_4b5b-1] (firstN nbits_4b5b ami_4b5b)
+
+[ chNrz4b5b; chMan4b5b; chAmi4b5b ]
+|> Chart.Grid(3, 1)
+|> Chart.withSize(1200, 800)
+
+#!fsharp
+
+// --------------------------
+// 4. Скремблирование сообщения
+// --------------------------
+
+// Пример: B_i = A_i XOR B_{i-3} XOR B_{i-5}
+let scramblePoly (a: int list) =
+    let mutable b = List.replicate (max 5 (a.Length)) 0
+    for i in 0 .. a.Length-1 do
+        let v = a.[i] ^^^ (if i>=3 then b.[i-3] else 0) ^^^ (if i>=5 then b.[i-5] else 0)
+        b <- b |> List.mapi (fun j x -> if j=i then v else x)
+    b.[0..a.Length-1]
+
+// Скремблируем исходное сообщение
+let scrambled = scramblePoly msgBits
+
+let scrambledBin = scrambled |> List.map string |> String.concat ""
+let scrambledBytes = [for i in 0..8..(scrambledBin.Length-1) -> scrambledBin.Substring(i, min 8 (scrambledBin.Length-i))]
+let scrambledHex = scrambledBytes |> List.map (fun b -> Convert.ToInt32(b,2).ToString("X2")) |> String.concat " "
+
+printfn "Скремблирование (B_i = A_i ⊕ B_{i-3} ⊕ B_{i-5}):"
+printfn "Двоичный код: %s" scrambledBin
+printfn "Шестнадцатеричный: %s" scrambledHex
+
+// Физическое кодирование (NRZ + Manchester) для скремблированного сообщения
+let nrz_scr = encodeNRZ scrambled
+let manch_scr = encodeManchester scrambled
+let chNrzScr = plotSignal "NRZ (скремблированное)" xs (firstN nbits nrz_scr)
+let chManScr = plotSignal "Manchester (скремблированное)" [0..2*nbits-1] (firstN (2*nbits) manch_scr)
+
+[ chNrzScr; chManScr ]
+|> Chart.Grid(2, 1)
+|> Chart.withSize(1200, 800)
+
+#!fsharp
+
+#r "nuget: Deedle"
+#r "nuget: FSharp.Charting"
+open System
+open Deedle
+open FSharp.Charting
+
+// --------------------------
+// 5. Сводная таблица (сравнение методов)
+// --------------------------
+
+type MethodResult = {
+    Name: string
+    Fmax: float
+    Fmin: float
+    BW: float
+    SpectrumWidth: string
+    Sync: string
+    DC: string
+    ErrorDetection: string
+    Complexity: string
+}
+
+// Вспомогательные функции для извлечения элементов из тройки
+let fst3 (a,_,_) = a
+let snd3 (_,b,_) = b
+let trd3 (_,_,c) = c
+
+let results = [
+    { Name="NRZ"; Fmax=fst3 freqNRZ; Fmin=snd3 freqNRZ; BW=trd3 freqNRZ; SpectrumWidth="Узкий"; Sync="Нет"; DC="Есть"; ErrorDetection="Нет"; Complexity="Минимальная" }
+    { Name="Manchester"; Fmax=fst3 freqManch; Fmin=snd3 freqManch; BW=trd3 freqManch; SpectrumWidth="Широкий"; Sync="Есть"; DC="Нет"; ErrorDetection="Нет"; Complexity="Средняя" }
+    { Name="AMI"; Fmax=fst3 freqAMI; Fmin=snd3 freqAMI; BW=trd3 freqAMI; SpectrumWidth="Средний"; Sync="Частично"; DC="Нет"; ErrorDetection="Да"; Complexity="Выше" }
+]
+
+let table =
+    [ [ "Метод"; "Fmax, МГц"; "Fmin, МГц"; "BW, МГц"; "Спектр"; "Синхронизация"; "Постоянная сост."; "Обнаружение ошибок"; "Сложность" ] ] @
+    (results |> List.map (fun m -> 
+        [ m.Name; sprintf "%.0f" (m.Fmax/1e6); sprintf "%.0f" (m.Fmin/1e6); sprintf "%.0f" (m.BW/1e6); m.SpectrumWidth; m.Sync; m.DC; m.ErrorDetection; m.Complexity ]
+    ))
+
+let frame =
+    Frame.ofRecords results
+frame.Display()
+
+#!fsharp
+
+let dates  = 
+  [ DateTime(2013,1,1); 
+    DateTime(2013,1,4); 
+    DateTime(2013,1,8) ]
+let values = 
+  [ 10.0; 20.0; 30.0 ]
+let first = Series(dates, values)
+
+// Create from a single list of observations
+Series.ofObservations
+  [ DateTime(2013,1,1) => 10.0
+    DateTime(2013,1,4) => 20.0
+    DateTime(2013,1,8) => 30.0 ]
+
+#!fsharp
+
+// --------------------------
+// 6. Выводы (пример автоматизированного текста)
+// --------------------------
+
+printfn """
+В работе выполнено физическое кодирование сообщения "%s" (%d байт) тремя способами: NRZ, Manchester, AMI.
+Построены временные диаграммы, рассчитаны частотные характеристики. 
+Показано, что Manchester обладает самосинхронизацией и отсутствием постоянной составляющей, однако требует большую ширину полосы. 
+NRZ отличается простотой реализации, но не гарантирует синхронизацию.
+AMI лишён постоянной составляющей и позволяет обнаруживать некоторые ошибки.
+
+Логическое кодирование 4B/5B позволило устранить длинные последовательности одинаковых бит, обеспечив самосинхронизацию и контроль ошибок за счёт запрещённых комбинаций, но увеличило избыточность сообщения на %.1f%%.
+
+Скремблирование позволило дополнительно устранить длинные последовательности одинаковых бит без увеличения избыточности.
+
+Лучшим способом для данного сообщения с позиции баланса между полосой и надёжностью можно признать AMI или Manchester в зависимости от требований к спектру и устойчивости к ошибкам.
+""" fio fioHex.Length (100.0*(float(encoded4b5b.Length-List.length msgBits)/float (List.length msgBits)))
