@@ -5,6 +5,7 @@
 #!fsharp
 
 #r "nuget: Plotly.NET.Interactive"
+#r "nuget: FSharp.Charting"
 
 open System
 open Plotly.NET
@@ -377,7 +378,6 @@ let chManScr = plotSignal "Manchester (скремблированное)" [0..2*
 
 #!fsharp
 
-#r "nuget: FSharp.Charting"
 open System
 open FSharp.Charting
 
@@ -409,9 +409,21 @@ let results = [
     { Name="AMI"; Fmax=fst4 freqAMI; Fmin=snd4 freqAMI; BW=trd4 freqAMI; Fav=frt4 freqAMI; SpectrumWidth="Средний"; Sync="Частично"; DC="Нет"; ErrorDetection="Да"; Complexity="Выше" }
 ]
 
-let table =
-    [ [ "Метод"; "Fmax, МГц"; "Fmin, МГц"; "BW, МГц"; "Fср, МГц"; "Спектр"; "Синхронизация"; "Постоянная сост."; "Обнаружение ошибок"; "Сложность" ] ] @
-    (results |> List.map (fun m ->
+type FormattedMethodResult = {
+    Метод                : string
+    ``Fmax, МГц``        : string
+    ``Fmin, МГц``        : string
+    ``BW, МГц``          : string
+    ``Fср, МГц``         : string
+    Спектр               : string
+    Синхронизация        : string
+    ``Постоянная сост.`` : string
+    ``Обнаружение ошибок``: string
+    Сложность            : string
+}
+
+let formattedResults : FormattedMethodResult list =
+    results |> List.map (fun m ->
         [ m.Name
           sprintf "%.0f" (m.Fmax/1e6)
           sprintf "%.0f" (m.Fmin/1e6)
@@ -422,9 +434,25 @@ let table =
           m.DC
           m.ErrorDetection
           m.Complexity ]
-    ))
+    )
+    |> List.map (fun row ->
+        match row with
+        | [met; fmax; fmin; bw; fav; spec; sync; dc; err; comp] ->
+            { Метод                = met
+              ``Fmax, МГц``        = fmax
+              ``Fmin, МГц``        = fmin
+              ``BW, МГц``          = bw
+              ``Fср, МГц``         = fav
+              Спектр               = spec
+              Синхронизация        = sync
+              ``Постоянная сост.`` = dc
+              ``Обнаружение ошибок``= err
+              Сложность            = comp }
+        | _ ->
+            invalidArg "row" "Неправильное число столбцов в строке"
+    )
 
-results.ToTabularDataResource()
+formattedResults.ToTabularDataResource()
 
 #!fsharp
 
