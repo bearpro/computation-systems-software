@@ -107,7 +107,7 @@ let msgBits =
 #!fsharp
 
 // --------------------------
-// 2. Физическое кодирование (NRZ, Manchester, AMI)
+// 2. Физическое кодирование (NRZ, Manchester, AMI, MLT-3, PAM-5)
 // --------------------------
 
 // --- NRZ ---
@@ -135,6 +135,36 @@ let encodeAMI bits =
 
 let amiSignal = encodeAMI msgBits
 
+// --- MLT-3 ---
+let encodeMLT3 bits =
+    let states = [|0; 1; 0; -1|]
+    let rec go bits idx acc =
+        match bits with
+        | [] -> List.rev acc
+        | 1::tl ->
+            let nextIdx = (idx + 1) % states.Length
+            go tl nextIdx (states.[nextIdx] :: acc)
+        | 0::tl ->
+            go tl idx (states.[idx] :: acc)
+    go bits 0 []
+
+let mlt3Signal = encodeMLT3 msgBits
+
+// --- PAM-5 ---
+let encodePAM5 bits =
+    let pairToLevel = function
+        | [0;0] -> -2
+        | [0;1] -> -1
+        | [1;0] -> 1
+        | [1;1] -> 2
+        | [b]    -> if b=1 then 1 else -2
+        | _ -> 0
+    bits
+    |> List.chunkBySize 2
+    |> List.map pairToLevel
+
+let pam5Signal = encodePAM5 msgBits
+
 let firstN n s = s |> List.take n
 
 let plotSignal name xs ys =
@@ -156,14 +186,17 @@ let plotSignal name xs ys =
 
 let nbits = 32
 let xs = [0..nbits-1]
+let xsPam5 = [0..nbits/2-1]
 
 let chNrz = plotSignal "NRZ" xs (firstN nbits nrzSignal)
 let chMan = plotSignal "Manchester" [0..2*nbits-1] (firstN (2*nbits) manchesterSignal)
 let chAmi = plotSignal "AMI" xs (firstN nbits amiSignal)
+let chMlt3 = plotSignal "MLT-3" xs (firstN nbits mlt3Signal)
+let chPam5 = plotSignal "PAM-5" xsPam5 (firstN (nbits/2) pam5Signal)
 
-[ chNrz; chMan; chAmi ]
-|> Chart.Grid(3, 1)
-|> Chart.withSize(1200, 800)
+[ chNrz; chMan; chAmi; chMlt3; chPam5 ]
+|> Chart.Grid(5, 1)
+|> Chart.withSize(1200, 1300)
 |> Chart.withTitle("Временные диаграммы сигналов с разными типами кодирования (первые 4 бит)")
 
 #!fsharp
