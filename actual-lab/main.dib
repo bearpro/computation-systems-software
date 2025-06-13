@@ -169,32 +169,63 @@ let chAmi = plotSignal "AMI" xs (firstN nbits amiSignal)
 #!fsharp
 
 // --------------------------
-// 2.1. Расчет частотных характеристик (по теории)
+// 2.1. Расчет частотных характеристик (фактические сигналы)
 // --------------------------
 
+open System.Numerics
+
 let c = 1e9 // C = 1 Гбит/с
+let bitT = 1.0 / c
 
-let freqNRZ = 
-    let f_v = c/2.0
-    let f_n = 0.0
-    let bw = f_v - f_n
-    (f_v, f_n, bw)
+let dft (samples: float[]) =
+    let N = samples.Length
+    [| for k in 0 .. N-1 ->
+        let mutable re = 0.0
+        let mutable im = 0.0
+        for n in 0 .. N-1 do
+            let angle = -2.0 * System.Math.PI * float k * float n / float N
+            re <- re + samples.[n] * cos angle
+            im <- im + samples.[n] * sin angle
+        Complex(re, im) |]
 
-let freqManch =
-    let f_v = c
-    let f_n = c/2.0
-    let bw = f_v - f_n
-    (f_v, f_n, bw)
+let spectrum signal dt =
+    let samples = signal |> List.map float |> List.toArray
+    let N = samples.Length
+    let coeffs = dft samples
+    let freqs = [| for k in 0 .. N-1 -> float k / (float N * dt) |]
+    let amps = coeffs |> Array.map (fun c -> c.Magnitude / float N)
+    Array.zip freqs amps
+    |> Array.filter (fun (f,a) -> f > 0.0 && a > 1e-6)
 
-let freqAMI =
-    let f_v = c/2.0
-    let f_n = 0.0 // При длинных 0 — возможна постоянная
-    let bw = f_v - f_n
-    (f_v, f_n, bw)
+let freqCharacteristics signal dt =
+    let sp = spectrum signal dt
+    let fmax = sp |> Array.maxBy fst |> fst
+    let fmin = sp |> Array.minBy fst |> fst
+    let bw = fmax - fmin
+    let favg =
+        (sp |> Array.sumBy (fun (f,a) -> f * a)) /
+        (sp |> Array.sumBy snd)
+    (fmax, fmin, bw, favg)
 
-printfn "NRZ:   Верхняя %.0f МГц, Нижняя %.0f МГц, Ширина %.0f МГц" (freqNRZ|>fun(f,_,w)->f/1e6) (freqNRZ|>fun(_,f,_)->f/1e6) (freqNRZ|>fun(_,_,w)->w/1e6)
-printfn "Manchester: %.0f МГц, %.0f МГц, %.0f МГц" (freqManch|>fun(f,_,w)->f/1e6) (freqManch|>fun(_,f,_)->f/1e6) (freqManch|>fun(_,_,w)->w/1e6)
-printfn "AMI:   %.0f МГц, %.0f МГц, %.0f МГц" (freqAMI|>fun(f,_,w)->f/1e6) (freqAMI|>fun(_,f,_)->f/1e6) (freqAMI|>fun(_,_,w)->w/1e6)
+let freqNRZ   = freqCharacteristics nrzSignal bitT
+let freqManch = freqCharacteristics manchesterSignal (bitT/2.0)
+let freqAMI   = freqCharacteristics amiSignal bitT
+
+printfn "NRZ:   Верхняя %.0f МГц, Нижняя %.0f МГц, Ширина %.0f МГц, Средняя %.0f МГц"
+        (freqNRZ|>fun(f,_,_,_)->f/1e6)
+        (freqNRZ|>fun(_,f,_,_)->f/1e6)
+        (freqNRZ|>fun(_,_,bw,_)->bw/1e6)
+        (freqNRZ|>fun(_,_,_,fc)->fc/1e6)
+printfn "Manchester: %.0f МГц, %.0f МГц, %.0f МГц, %.0f МГц"
+        (freqManch|>fun(f,_,_,_)->f/1e6)
+        (freqManch|>fun(_,f,_,_)->f/1e6)
+        (freqManch|>fun(_,_,bw,_)->bw/1e6)
+        (freqManch|>fun(_,_,_,fc)->fc/1e6)
+printfn "AMI:   %.0f МГц, %.0f МГц, %.0f МГц, %.0f МГц"
+        (freqAMI|>fun(f,_,_,_)->f/1e6)
+        (freqAMI|>fun(_,f,_,_)->f/1e6)
+        (freqAMI|>fun(_,_,bw,_)->bw/1e6)
+        (freqAMI|>fun(_,_,_,fc)->fc/1e6)
 
 #!fsharp
 
@@ -315,6 +346,7 @@ type MethodResult = {
     Fmax: float
     Fmin: float
     BW: float
+    Fav: float
     SpectrumWidth: string
     Sync: string
     DC: string
@@ -322,21 +354,31 @@ type MethodResult = {
     Complexity: string
 }
 
-// Вспомогательные функции для извлечения элементов из тройки
-let fst3 (a,_,_) = a
-let snd3 (_,b,_) = b
-let trd3 (_,_,c) = c
+// Вспомогательные функции для извлечения элементов из четвёрки
+let fst4 (a,_,_,_) = a
+let snd4 (_,b,_,_) = b
+let trd4 (_,_,c,_) = c
+let frt4  (_,_,_,d) = d
 
 let results = [
-    { Name="NRZ"; Fmax=fst3 freqNRZ; Fmin=snd3 freqNRZ; BW=trd3 freqNRZ; SpectrumWidth="Узкий"; Sync="Нет"; DC="Есть"; ErrorDetection="Нет"; Complexity="Минимальная" }
-    { Name="Manchester"; Fmax=fst3 freqManch; Fmin=snd3 freqManch; BW=trd3 freqManch; SpectrumWidth="Широкий"; Sync="Есть"; DC="Нет"; ErrorDetection="Нет"; Complexity="Средняя" }
-    { Name="AMI"; Fmax=fst3 freqAMI; Fmin=snd3 freqAMI; BW=trd3 freqAMI; SpectrumWidth="Средний"; Sync="Частично"; DC="Нет"; ErrorDetection="Да"; Complexity="Выше" }
+    { Name="NRZ"; Fmax=fst4 freqNRZ; Fmin=snd4 freqNRZ; BW=trd4 freqNRZ; Fav=frt4 freqNRZ; SpectrumWidth="Узкий"; Sync="Нет"; DC="Есть"; ErrorDetection="Нет"; Complexity="Минимальная" }
+    { Name="Manchester"; Fmax=fst4 freqManch; Fmin=snd4 freqManch; BW=trd4 freqManch; Fav=frt4 freqManch; SpectrumWidth="Широкий"; Sync="Есть"; DC="Нет"; ErrorDetection="Нет"; Complexity="Средняя" }
+    { Name="AMI"; Fmax=fst4 freqAMI; Fmin=snd4 freqAMI; BW=trd4 freqAMI; Fav=frt4 freqAMI; SpectrumWidth="Средний"; Sync="Частично"; DC="Нет"; ErrorDetection="Да"; Complexity="Выше" }
 ]
 
 let table =
-    [ [ "Метод"; "Fmax, МГц"; "Fmin, МГц"; "BW, МГц"; "Спектр"; "Синхронизация"; "Постоянная сост."; "Обнаружение ошибок"; "Сложность" ] ] @
-    (results |> List.map (fun m -> 
-        [ m.Name; sprintf "%.0f" (m.Fmax/1e6); sprintf "%.0f" (m.Fmin/1e6); sprintf "%.0f" (m.BW/1e6); m.SpectrumWidth; m.Sync; m.DC; m.ErrorDetection; m.Complexity ]
+    [ [ "Метод"; "Fmax, МГц"; "Fmin, МГц"; "BW, МГц"; "Fср, МГц"; "Спектр"; "Синхронизация"; "Постоянная сост."; "Обнаружение ошибок"; "Сложность" ] ] @
+    (results |> List.map (fun m ->
+        [ m.Name
+          sprintf "%.0f" (m.Fmax/1e6)
+          sprintf "%.0f" (m.Fmin/1e6)
+          sprintf "%.0f" (m.BW/1e6)
+          sprintf "%.0f" (m.Fav/1e6)
+          m.SpectrumWidth
+          m.Sync
+          m.DC
+          m.ErrorDetection
+          m.Complexity ]
     ))
 
 let frame =
