@@ -12,33 +12,82 @@ open Plotly.NET
 #!fsharp
 
 // --------------------------
+// 0. Проверяем что кодовая таблица соотстветствует 12-51
+// --------------------------
+
+module Win1251 =
+    open System
+    open System.Text
+
+    do
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)
+
+    let private enc1251 = Encoding.GetEncoding(1251)
+    let charToHex (c: char) : string =
+        let bytes = enc1251.GetBytes([| c |])
+        if bytes.Length <> 1 then
+            failwithf "Character '%c' is not in Windows-1251." c
+        else
+            bytes.[0].ToString("X2")
+
+    /// Convert a whole string into an array of hex codes.
+    let stringToHex (s: string) : string[] =
+        s.ToCharArray()
+        |> Array.map charToHex
+
+    /// Convert a string into an array of binary-octet strings ("01010101").
+    let stringToBin (s: string) : string[] =
+        s
+        |> stringToHex
+        |> Array.map (fun hex -> Convert.ToString(Convert.ToInt32(hex, 16), 2).PadLeft(8, '0'))
+
+module ActualEncoding =
+    let charToHex = dict [
+        'А', "C0"; 'Б', "C1"; 'В', "C2"; 'Г', "C3"; 'Д', "C4"; 'Е', "C5"; 'Ж', "C6"; 'З', "C7"
+        'И', "C8"; 'Й', "C9"; 'К', "CA"; 'Л', "CB"; 'М', "CC"; 'Н', "CD"; 'О', "CE"; 'П', "CF"
+        'Р', "D0"; 'С', "D1"; 'Т', "D2"; 'У', "D3"; 'Ф', "D4"; 'Х', "D5"; 'Ц', "D6"; 'Ч', "D7"
+        'Ш', "D8"; 'Щ', "D9"; 'Ъ', "DA"; 'Ы', "DB"; 'Ь', "DC"; 'Э', "DD"; 'Ю', "DE"; 'Я', "DF"
+        'а', "E0"; 'б', "E1"; 'в', "E2"; 'г', "E3"; 'д', "E4"; 'е', "E5"; 'ж', "E6"; 'з', "E7"
+        'и', "E8"; 'й', "E9"; 'к', "EA"; 'л', "EB"; 'м', "EC"; 'н', "ED"; 'о', "EE"; 'п', "EF"
+        'р', "F0"; 'с', "F1"; 'т', "F2"; 'у', "F3"; 'ф', "F4"; 'х', "F5"; 'ц', "F6"; 'ч', "F7"
+        'ш', "F8"; 'щ', "F9"; 'ъ', "FA"; 'ы', "FB"; 'ь', "FC"; 'э', "FD"; 'ю', "FE"; 'я', "FF"
+        ' ', "20"; '.', "2E"
+        'М', "CC"; 'Р', "D0" // дублируем для инициалов
+    ]
+
+    let stringToHex (s: string) : string[] =
+        s.ToCharArray()
+        |> Array.map (fun c -> 
+            match charToHex.TryGetValue(c) with
+            | true, v -> v
+            | _ -> failwithf $"Не найден код для символа '{c}'"
+        )
+
+    let fioBin (s: string) : string[] =
+        s
+        |> stringToHex
+        |> Array.map (fun h -> Convert.ToString(Convert.ToInt32(h,16),2).PadLeft(8,'0'))
+
+let fio = "Проказин М.Р."
+
+let fioHex1251 = Win1251.stringToHex fio
+let fioHexACtual = ActualEncoding.stringToHex fio
+
+{| resultActual = fioHexACtual
+   reaultWin1251 = fioHex1251
+   equal = fioHex1251 = fioHexACtual
+|}
+
+#!fsharp
+
+// --------------------------
 // 1. Исходное сообщение
 // --------------------------
 
-// Таблица соответствий для символов (Windows-1251, урезанная под задание)
-let charToHex = dict [
-    'А', "C0"; 'Б', "C1"; 'В', "C2"; 'Г', "C3"; 'Д', "C4"; 'Е', "C5"; 'Ж', "C6"; 'З', "C7"
-    'И', "C8"; 'Й', "C9"; 'К', "CA"; 'Л', "CB"; 'М', "CC"; 'Н', "CD"; 'О', "CE"; 'П', "CF"
-    'Р', "D0"; 'С', "D1"; 'Т', "D2"; 'У', "D3"; 'Ф', "D4"; 'Х', "D5"; 'Ц', "D6"; 'Ч', "D7"
-    'Ш', "D8"; 'Щ', "D9"; 'Ъ', "DA"; 'Ы', "DB"; 'Ь', "DC"; 'Э', "DD"; 'Ю', "DE"; 'Я', "DF"
-    'а', "E0"; 'б', "E1"; 'в', "E2"; 'г', "E3"; 'д', "E4"; 'е', "E5"; 'ж', "E6"; 'з', "E7"
-    'и', "E8"; 'й', "E9"; 'к', "EA"; 'л', "EB"; 'м', "EC"; 'н', "ED"; 'о', "EE"; 'п', "EF"
-    'р', "F0"; 'с', "F1"; 'т', "F2"; 'у', "F3"; 'ф', "F4"; 'х', "F5"; 'ц', "F6"; 'ч', "F7"
-    'ш', "F8"; 'щ', "F9"; 'ъ', "FA"; 'ы', "FB"; 'ь', "FC"; 'э', "FD"; 'ю', "FE"; 'я', "FF"
-    ' ', "20"; '.', "2E"
-    'М', "CC"; 'Р', "D0" // дублируем для инициалов
-]
-
-// Ваше ФИО
 let fio = "Проказин М.Р."
 
-let fioHex =
-    fio.ToCharArray()
-    |> Array.map (fun c -> 
-        match charToHex.TryGetValue(c) with
-        | true, v -> v
-        | _ -> failwithf $"Не найден код для символа '{c}'"
-    )
+let fioHex = 
+    Win1251.stringToHex fio
     |> Array.toList
 
 let fioBin =
@@ -294,22 +343,6 @@ let table =
 let frame =
     Frame.ofRecords results
 frame.Display()
-
-#!fsharp
-
-let dates  = 
-  [ DateTime(2013,1,1); 
-    DateTime(2013,1,4); 
-    DateTime(2013,1,8) ]
-let values = 
-  [ 10.0; 20.0; 30.0 ]
-let first = Series(dates, values)
-
-// Create from a single list of observations
-Series.ofObservations
-  [ DateTime(2013,1,1) => 10.0
-    DateTime(2013,1,4) => 20.0
-    DateTime(2013,1,8) => 30.0 ]
 
 #!fsharp
 
