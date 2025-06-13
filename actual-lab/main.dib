@@ -135,7 +135,6 @@ let encodeAMI bits =
 
 let amiSignal = encodeAMI msgBits
 
-// Для визуализации: первые 32 бита (4 байта)
 let firstN n s = s |> List.take n
 
 let plotSignal name xs ys =
@@ -148,15 +147,14 @@ let plotSignal name xs ys =
             | [] -> acc
         build [] pairs |> List.unzip
 
-    // let (x, y) = (xs, ys) in
     let (x, y) = toStepData xs ys in
         Chart.Line(x=x, y=y, Name=name)
-        |> Chart.withXAxisStyle("Бит")
+        |> Chart.withXAxisStyle("t")
         |> Chart.withYAxisStyle("Уровень")
         |> Chart.withTitle(name)
         |> Chart.withSize(800,250)
 
-let nbits = 104
+let nbits = 32
 let xs = [0..nbits-1]
 
 let chNrz = plotSignal "NRZ" xs (firstN nbits nrzSignal)
@@ -166,6 +164,7 @@ let chAmi = plotSignal "AMI" xs (firstN nbits amiSignal)
 [ chNrz; chMan; chAmi ]
 |> Chart.Grid(3, 1)
 |> Chart.withSize(1200, 800)
+|> Chart.withTitle("Временные диаграммы сигналов с разными типами кодирования (первые 4 бит)")
 
 #!fsharp
 
@@ -200,10 +199,10 @@ printfn "AMI:   %.0f МГц, %.0f МГц, %.0f МГц" (freqAMI|>fun(f,_,w)->f/1
 #!fsharp
 
 // --------------------------
-// 3. Логическое кодирование (4B/5B)
+// 3. Избыточное кодирование (4B/5B)
 // --------------------------
 
-// Таблица 4B/5B (копировать из условия)
+// Таблица преобразования 4B/5B
 let table4B5B = dict [
     "0000","11110"; "0001","01001"; "0010","10100"; "0011","10101";
     "0100","01010"; "0101","01011"; "0110","01110"; "0111","01111";
@@ -246,7 +245,7 @@ printfn "Избыточность: %.1f%%" (100.0*(float(encoded4b5b.Length-(Lis
 #!fsharp
 
 // --------------------------
-// 3.1. Физическое кодирование для 4B/5B (повторяем NRZ, Manchester, AMI)
+// 3.1. Временные диаграммы для избыточного кода кодирование для 4B/5B (повторяем NRZ, Manchester, AMI)
 // --------------------------
 
 let bits4b5b = encoded4b5b.ToCharArray() |> Array.map (fun c -> int c - int '0') |> Array.toList
