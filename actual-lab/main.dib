@@ -407,6 +407,8 @@ let results = [
     { Name="NRZ"; Fmax=fst4 freqNRZ; Fmin=snd4 freqNRZ; BW=trd4 freqNRZ; Fav=frt4 freqNRZ; SpectrumWidth="Узкий"; Sync="Нет"; DC="Есть"; ErrorDetection="Нет"; Complexity="Минимальная" }
     { Name="Manchester"; Fmax=fst4 freqManch; Fmin=snd4 freqManch; BW=trd4 freqManch; Fav=frt4 freqManch; SpectrumWidth="Широкий"; Sync="Есть"; DC="Нет"; ErrorDetection="Нет"; Complexity="Средняя" }
     { Name="AMI"; Fmax=fst4 freqAMI; Fmin=snd4 freqAMI; BW=trd4 freqAMI; Fav=frt4 freqAMI; SpectrumWidth="Средний"; Sync="Частично"; DC="Нет"; ErrorDetection="Да"; Complexity="Выше" }
+    { Name="MLT-3"; Fmax=fst4 freqMlt3; Fmin=snd4 freqMlt3; BW=trd4 freqMlt3; Fav=frt4 freqMlt3; SpectrumWidth="Узкий"; Sync="Нет"; DC="Нет"; ErrorDetection="Нет"; Complexity="Выше" }
+    { Name="PAM-5"; Fmax=fst4 freqPam5; Fmin=snd4 freqPam5; BW=trd4 freqPam5; Fav=frt4 freqPam5; SpectrumWidth="Узкий"; Sync="Нет"; DC="Нет"; ErrorDetection="Нет"; Complexity="Высокая" }
 ]
 
 type FormattedMethodResult = {
@@ -461,11 +463,13 @@ formattedResults.ToTabularDataResource()
 // --------------------------
 
 printfn """
-В работе выполнено физическое кодирование сообщения "%s" (%d байт) тремя способами: NRZ, Manchester, AMI.
-Построены временные диаграммы, рассчитаны частотные характеристики. 
-Показано, что Manchester обладает самосинхронизацией и отсутствием постоянной составляющей, однако требует большую ширину полосы. 
+В работе выполнено физическое кодирование сообщения "%s" (%d байт) пятью способами: NRZ, Manchester, AMI, MLT-3 и PAM-5.
+Построены временные диаграммы, рассчитаны частотные характеристики.
+Показано, что Manchester обладает самосинхронизацией и отсутствием постоянной составляющей, однако требует большую ширину полосы.
 NRZ отличается простотой реализации, но не гарантирует синхронизацию.
 AMI лишён постоянной составляющей и позволяет обнаруживать некоторые ошибки.
+
+MLT-3 и PAM-5 обеспечивают более узкий спектр за счёт многоуровневых сигналов, но сложнее в реализации и не обеспечивают самосинхронизацию.
 
 Логическое кодирование 4B/5B позволило устранить длинные последовательности одинаковых бит, обеспечив самосинхронизацию и контроль ошибок за счёт запрещённых комбинаций, но увеличило избыточность сообщения на %.1f%%.
 
