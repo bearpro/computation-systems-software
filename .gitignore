@@ -1,2 +1,5 @@
 **/.venv/*
 dotnet-install.sh
+bin/
+obj/
+.vs/
