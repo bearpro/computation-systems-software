@@ -178,16 +178,13 @@ redundantSignals
 
 #!markdown
 
-**TODO** Выбрать наилучший способ физического кодирования для передачи
-нового избыточного сообщения и обосновать этот выбор.
+**Вывод**
+
+На основании полученных спектральных характеристик наиболее эффективным методом кодирования для сообщения с избыточным кодом 4B/5B является PAM-5, поскольку он обеспечивает минимальную ширину спектра сигнала и наименьшие требования к полосе пропускания канала, значительно превосходя по этим показателям MLT-3. При этом нужно учитывать, что PAM-5 более требователен к аппаратному обеспечению.
 
 #!markdown
 
 ### Скремблирование исходного сообщения
-
-#!markdown
-
-**TODO** Выбрать оптимальный полином для скремблирования
 
 #!fsharp
 
@@ -197,13 +194,57 @@ Signal.Formatting.printBitSeq scrambledMessage
 
 #!fsharp
 
+let rec combinations k xs =
+    seq {
+        match k, xs with
+        | 0, _         -> yield []           // ровно одна комбинация — пустая
+        | _, []        -> ()                 // если список пуст, а k>0 — ничего
+        | k, y :: ys when k > 0 ->
+            // включаем y
+            for tail in combinations (k-1) ys do
+                yield y :: tail
+            // не включаем y
+            for tail in combinations k ys do
+                yield tail
+        | _ -> ()  // остальные случаи (k<0) — игнор
+    }
+
+/// Перебираем все наборы taps от длины 1 до 10, значения из [1..20]
+let allScramblings (bits: int list) =
+    seq {
+        for k in 1 .. 10 do
+            for taps in combinations k [1..20] do
+                // например, можно фильтровать только упорядоченные комбинации
+                // либо брать только строго возрастающие, как здесь:
+                let tapsSorted = List.sort taps
+                if taps = tapsSorted then
+                    yield taps, Signal.LogicalEncoding.scramble taps bits
+    }
+
+let scrambledMessages = allScramblings message
+
 let scrambledSignals =
     effectivePhysicalEncoders
-    |> List.map ^ fun (name, encoder) -> (name, encoder scrambledMessage)
+    |> List.collect ^ fun (name, encoder) ->
+        scrambledMessages
+        |> Seq.map ^ fun (taps, scrambledMessage) -> (sprintf "%s (%A)" name taps, encoder scrambledMessage)
+        |> Seq.toList
+
+let scrambledSignalsAnalysis =
+    scrambledSignals
+    |> List.map (fun (name, signal) ->
+        let freq = Signal.FrequencyAnalysis.analyze (int 1e9) signal
+        (name, freq, signal)
+    )
+
+let top5ScrambledSignals =
+    scrambledSignalsAnalysis
+    |> List.sortBy (fun (_, freq, _) -> freq.EffectiveWidth)
+    |> List.take 5
 
 let scrambledSignalPlots = 
-    redundantSignals
-    |> List.map ^ fun (name, signal) ->
+    top5ScrambledSignals
+    |> List.map ^ fun (name, _, signal) ->
         let oversamplingFactor = 40
         let oversampledSignal = Signal.oversample signal oversamplingFactor
         let segmentToPlot = List.takeWhile (fun (x, _) -> x < float (bitsToPlot)) oversampledSignal

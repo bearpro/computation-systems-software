@@ -175,12 +175,23 @@
                     failwithf "encode4b5b: неверная 4-битная группа %A" nibble
             )
         
-        let scrambleI35 (bits: int list) : int list =
-            let mutable b = List.replicate (max 5 (bits.Length)) 0
-            for i in 0 .. bits.Length-1 do
-                let v = bits.[i] ^^^ (if i>=3 then bits.[i-3] else 0) ^^^ (if i>=5 then bits.[i-5] else 0)
-                b <- b |> List.mapi (fun j x -> if j=i then v else x)
-            b.[0..bits.Length-1]
+        let scramble (taps: int list) (bits: int list) : int list =
+            let maxTap = List.max taps
+            let mutable buf = List.replicate (max maxTap bits.Length) 0
+
+            for i in 0 .. bits.Length - 1 do
+                let v =
+                    taps
+                    |> List.fold (fun acc t ->
+                        let x = if i >= t then bits.[i - t] else 0
+                        acc ^^^ x
+                    ) bits.[i]
+                buf <- buf |> List.mapi (fun j x -> if j = i then v else x)
+
+            buf.[0 .. bits.Length - 1]
+
+        let scrambleI35 = scramble [3; 5]
+
 
     module FrequencyAnalysis =
         type Result = {
