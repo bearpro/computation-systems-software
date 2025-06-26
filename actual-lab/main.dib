@@ -1,6 +1,6 @@
 #!meta
 
-{"kernelInfo":{"defaultKernelName":"fsharp","items":[{"name":"csharp"},{"name":"fsharp","languageName":"F#","aliases":["f#","fs"]},{"name":"html","languageName":"HTML"},{"name":"http","languageName":"HTTP"},{"name":"javascript","languageName":"JavaScript","aliases":["js"]},{"name":"mermaid","languageName":"Mermaid"},{"name":"pwsh","languageName":"PowerShell","aliases":["powershell"]},{"name":"value"}]}}
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"},{"name":"fsharp","languageName":"F#","aliases":["f#","fs"]},{"name":"html","languageName":"HTML"},{"name":"http","languageName":"HTTP"},{"name":"javascript","languageName":"JavaScript","aliases":["js"]},{"name":"mermaid","languageName":"Mermaid"},{"name":"pwsh","languageName":"PowerShell","aliases":["powershell"]},{"name":"value"}]}}
 
 #!fsharp
 
@@ -28,9 +28,7 @@ _(готово)_
 
 #!fsharp
 
-// let messageStr = "Проказин М.Р."
-let messageStr = "Теремов Иван Алексеевич"
-
+let messageStr = "Проказин М.Р."
 let message = Signal.encode messageStr
 
 Signal.Formatting.printBitSeq message
@@ -206,16 +204,13 @@ let rec combinations k xs =
             // не включаем y
             for tail in combinations k ys do
                 yield tail
-        | _ -> ()  // остальные случаи (k<0) — игнор
+        | _ -> ()
     }
 
-/// Перебираем все наборы taps от длины 1 до 10, значения из [1..20]
 let allScramblings (bits: int list) =
     seq {
-        for k in 1 .. 10 do
-            for taps in combinations k [1..20] do
-                // например, можно фильтровать только упорядоченные комбинации
-                // либо брать только строго возрастающие, как здесь:
+        for k in 1 .. 5 do
+            for taps in combinations k [1..4] do
                 let tapsSorted = List.sort taps
                 if taps = tapsSorted then
                     yield taps, Signal.LogicalEncoding.scramble taps bits
@@ -239,7 +234,7 @@ let scrambledSignalsAnalysis =
 
 let top5ScrambledSignals =
     scrambledSignalsAnalysis
-    |> List.sortBy (fun (_, freq, _) -> freq.EffectiveWidth)
+    |> List.sortBy (fun (_, freq, _) -> (freq.EffectiveWidth, -freq.AverageFrequency))
     |> List.take 5
 
 let scrambledSignalPlots = 
@@ -256,5 +251,21 @@ let scrambledSignalPlots =
         |> Chart.withYAxisStyle($"{name} potential")
 
 scrambledSignalPlots
-|> Chart.Grid(2, 1)
-|> Chart.withSize(1200, 500)
+|> Chart.Grid(5, 1)
+|> Chart.withSize(1200, 1000)
+
+#!fsharp
+
+top5ScrambledSignals
+|> List.map ^ fun (name, freq, _) ->
+    {| Name = name
+       LowerFrequencyBound  = Signal.Formatting.formatFreq freq.LowerFrequencyBound
+       UpperFrequencyBound  = Signal.Formatting.formatFreq freq.UpperFrequencyBound 
+       AverageFrequency     = Signal.Formatting.formatFreq freq.AverageFrequency
+       SpectralWidth        = Signal.Formatting.formatFreq freq.SpectralWidth 
+       EffectiveWidth       = Signal.Formatting.formatFreq freq.EffectiveWidth |}
+|> table
+
+#!markdown
+
+В качестве критерия мы стремились к максимальной средней частоте при минимально возможной эффективной ширине спектра: все пять лучших вариантов имеют практически одинаковую эффективную ширину (≈1,62 ГГц для двух первых и ≈1,67 ГГц для остальных), однако полином с тапами [1; 3] демонстрирует заметно более высокую среднюю частоту (221,15 МГц) по сравнению с ближайшим конкурентом ([2; 4] – 197,12 МГц). Это означает, что при той же или даже чуть меньшей занимаемой полосе сигнал лучше концентрируется вокруг центра спектра, что снижает влияние низких и высоких гармоник и обеспечивает более равномерное распределение мощности. Поэтому именно полином [1; 3] был признан оптимальным: он обеспечивает наилучшее соотношение «полоса качества» (effective width) и «энергетической компактности» (average frequency).
